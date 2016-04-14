@@ -1,9 +1,13 @@
 package raftutil
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,30 +26,43 @@ func TestProxyToLeader(t *testing.T) {
 
 	// defer os.RemoveAll(snap)
 	peerStore := new(raft.StaticPeers)
-	dir2, trans := raft.NewInmemTransport("")
-	defer os.RemoveAll(dir2)
+	// dir2, trans := raft.NewInmemTransport("")
+	// Setup Raft communication.
+	addr := ":12000"
+	transport, err := CreateTransport(addr)
+	if err != nil {
+		t.Fatal("Can't create transport")
+	}
 
-	// Enable single mode so this raft is the leader
-	config.EnableSingleNode = true
-	config.DisableBootstrapAfterElect = false
+	// defer os.RemoveAll(dir2)
 
-	r, err := raft.NewRaft(config, fsm, logs, store, snap, peerStore, trans)
+	// Start as leader
+	config.StartAsLeader = true
+
+	r, err := raft.NewRaft(config, fsm, logs, store, snap, peerStore, transport)
 	if err != nil {
 		t.Fatalf("[ERR] NewRaft failed: %v", err)
 	}
 	defer r.Shutdown()
 
-	// Wait for leader election
-	select {
-	case leader := <-r.LeaderCh():
-		if !leader {
-			panic("Raft LeaderCh should be true")
-		}
-	}
+	// Create test server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, client")
+	}))
+	defer ts.Close()
 
-	resp, err := ProxyToLeader(r, nil, nil)
+	// Create request and client
+	request, err := http.NewRequest("POST", ts.URL, nil)
+	client := http.DefaultClient
+
+	// Get test servers URL
+	url := strings.TrimLeft(ts.URL, "http://")
+	port, _ := getPortFromAddr(url)
+
+	// Forward the request
+	_, err = ProxyToLeader(r, port, request, client)
 	if err != nil {
-		t.Error("ProxyToLeader failed:", err, resp)
+		t.Error("ProxyToLeader failed:", err)
 	}
 }
 
