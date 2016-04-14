@@ -26,15 +26,13 @@ func TestProxyToLeader(t *testing.T) {
 
 	// defer os.RemoveAll(snap)
 	peerStore := new(raft.StaticPeers)
-	// dir2, trans := raft.NewInmemTransport("")
+
 	// Setup Raft communication.
 	addr := ":12000"
-	transport, err := CreateTransport(addr)
+	transport, err := TCPTransport(addr)
 	if err != nil {
 		t.Fatal("Can't create transport")
 	}
-
-	// defer os.RemoveAll(dir2)
 
 	// Start as leader
 	config.StartAsLeader = true
