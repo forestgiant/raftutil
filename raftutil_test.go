@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/forestgiant/portutil"
 	"github.com/hashicorp/go-msgpack/codec"
 	"github.com/hashicorp/raft"
 )
@@ -55,10 +57,11 @@ func TestProxyToLeader(t *testing.T) {
 
 	// Get test servers URL
 	url := strings.TrimLeft(ts.URL, "http://")
-	port, _ := getPortFromAddr(url)
+	port, _ := portutil.GetPortFromAddr(url)
+	portStr := strconv.Itoa(port)
 
 	// Forward the request
-	_, err = ProxyToLeader(r, port, request, client)
+	_, err = ProxyToLeader(r, portStr, request, client)
 	if err != nil {
 		t.Error("ProxyToLeader failed:", err)
 	}

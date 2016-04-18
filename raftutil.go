@@ -10,9 +10,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 
+	"github.com/forestgiant/fsutil"
+	"github.com/forestgiant/portutil"
 	"github.com/hashicorp/raft"
 )
 
@@ -24,11 +25,13 @@ func ProxyToLeader(r *raft.Raft, port string, req *http.Request, client *http.Cl
 		return nil, raft.ErrNotLeader
 	}
 
+	fmt.Println("LEADER!!!", leader)
+
 	// setup proxy URL
 	proxyURL := req.URL
 
 	// Replace port
-	newURL, err := replacePortInAddr(leader, port)
+	newURL, err := portutil.ReplacePortInAddr(leader, port)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +55,7 @@ func TCPTransport(raftAddress string) (raft.Transport, error) {
 
 // Cleanup creates an os.Signal chan to listen for interrupts
 // and if received shutsdown raft
-func Cleanup(r *raft.Raft, raftDir string) chan error {
+func Cleanup(r *raft.Raft) chan error {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt)
 
@@ -61,31 +64,35 @@ func Cleanup(r *raft.Raft, raftDir string) chan error {
 	go func() {
 		<-interrupt
 		fmt.Println("\nCleanup raft")
-		r.Shutdown()
-
-		// Remove all raft files
-		// First warn if this is your current working dir
-		wd, err := os.Getwd()
-		if err != nil {
-			errc <- err
-			return
-		}
-
-		if wd == raftDir {
-			errc <- errors.New("\n Warning: Current directory is the same as raft directory. Must delete raft files manually")
-			return
-		}
-
-		errc <- removeContents(raftDir)
+		f := r.Shutdown()
+		errc <- f.Error()
 	}()
 
 	return errc
 }
 
 // Bootstrap puts the node into single mode to elect itself as leader
-func Bootstrap(config *raft.Config) {
+func Bootstrap(config *raft.Config, raftDir string) error {
+	// Remove all raft files
+	// First warn if this is your current working dir
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	if wd == raftDir {
+		return errors.New("\n Warning: Current directory is the same as raft directory. Must delete raft files manually")
+	}
+
+	err = fsutil.RemoveDirContent(raftDir)
+	if err != nil {
+		return err
+	}
+
 	config.EnableSingleNode = true
 	config.DisableBootstrapAfterElect = true
+
+	return nil
 }
 
 // ReadPeersJSON returns the peers from the PeerStore file
@@ -106,44 +113,4 @@ func ReadPeersJSON(path string) ([]string, error) {
 	}
 
 	return peers, nil
-}
-
-// Helper function to quickly get the port from an addr string
-func getPortFromAddr(addr string) (string, error) {
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "", err
-	}
-
-	return port, nil
-}
-
-func replacePortInAddr(addr, newPort string) (string, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "", err
-	}
-
-	return net.JoinHostPort(host, newPort), nil
-}
-
-func removeContents(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-
-	defer d.Close()
-	names, err := d.Readdirnames(-1)
-	if err != nil {
-		return err
-	}
-
-	for _, name := range names {
-		err = os.RemoveAll(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
