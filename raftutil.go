@@ -113,3 +113,18 @@ func RemoveRaftFiles(raftDir string) error {
 
 	return nil
 }
+
+// LeaderPort returns the port of the current LeaderPort
+func LeaderPort(r *raft.Raft) (string, error) {
+	leader := r.Leader()
+	if leader == "" {
+		return "", raft.ErrNotLeader
+	}
+
+	_, port, err := net.SplitHostPort(leader)
+	if err != nil {
+		return "", err
+	}
+
+	return port, nil
+}
