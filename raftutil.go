@@ -38,6 +38,8 @@ func ProxyToLeader(r *raft.Raft, port string, req *http.Request, client *http.Cl
 	// Set proxyURL host
 	proxyURL.Host = newURL
 
+	req.URL = proxyURL
+
 	// Proxy request to leader
 	return client.Do(req)
 }
