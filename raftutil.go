@@ -24,10 +24,9 @@ func ProxyToLeader(r *raft.Raft, port string, req *http.Request, client *http.Cl
 		return nil, raft.ErrNotLeader
 	}
 
-	fmt.Println("LEADER!!!", leader)
-
 	// setup proxy URL
-	proxyURL := req.URL
+	proxyURL := *req.URL
+	proxyURL.Scheme = req.URL.Scheme
 
 	// Replace port
 	newURL, err := portutil.ReplacePortInAddr(leader, port)
@@ -38,10 +37,12 @@ func ProxyToLeader(r *raft.Raft, port string, req *http.Request, client *http.Cl
 	// Set proxyURL host
 	proxyURL.Host = newURL
 
-	req.URL = proxyURL
+	// Setup new request and copy the body
+	request, err := http.NewRequest(req.Method, proxyURL.String(), nil)
+	request.Body = req.Body
 
 	// Proxy request to leader
-	return client.Do(req)
+	return client.Do(request)
 }
 
 // TCPTransport creates a tcp raft Transport from the address supplied
