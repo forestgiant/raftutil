@@ -3,16 +3,15 @@ package raftutil
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
-	"github.com/forestgiant/fsutil"
 	"github.com/forestgiant/portutil"
 	"github.com/hashicorp/raft"
 )
@@ -55,7 +54,7 @@ func TCPTransport(raftAddress string) (raft.Transport, error) {
 
 // Cleanup creates an os.Signal chan to listen for interrupts
 // and if received shutsdown raft
-func Cleanup(r *raft.Raft) chan error {
+func Cleanup(r *raft.Raft, raftDir string) chan error {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt)
 
@@ -66,31 +65,17 @@ func Cleanup(r *raft.Raft) chan error {
 		fmt.Println("\nCleanup raft")
 		f := r.Shutdown()
 		errc <- f.Error()
+
+		errc <- RemoveRaftFiles(raftDir)
 	}()
 
 	return errc
 }
 
 // Bootstrap puts the node into single mode to elect itself as leader
-func Bootstrap(config *raft.Config, raftDir string) error {
-	// Remove all raft files
-	// First warn if this is your current working dir
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	if wd == raftDir {
-		return errors.New("\n Warning: Current directory is the same as raft directory. Must delete raft files manually")
-	}
-
-	err = fsutil.RemoveDirContent(raftDir)
-	if err != nil {
-		return err
-	}
-
+func Bootstrap(config *raft.Config) error {
 	config.EnableSingleNode = true
-	config.DisableBootstrapAfterElect = true
+	config.DisableBootstrapAfterElect = false
 
 	return nil
 }
@@ -113,4 +98,18 @@ func ReadPeersJSON(path string) ([]string, error) {
 	}
 
 	return peers, nil
+}
+
+// RemoveRaftFiles removes all files in raftDir
+func RemoveRaftFiles(raftDir string) error {
+	// Remove peers.json
+	os.Remove(filepath.Join(raftDir, "peers.json"))
+
+	// Remove raft_stela.db
+	os.RemoveAll(filepath.Join(raftDir, "raft_stela.db"))
+
+	// Remove snapshots folder
+	os.RemoveAll(filepath.Join(raftDir, "snapshots"))
+
+	return nil
 }
